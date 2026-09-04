@@ -1,7 +1,7 @@
 const { useState, useEffect, useRef } = React;
 
 // --- API Service ---
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'https://quant-detect-1.onrender.com';
 
 const api = {
     predict: async (data) => {
