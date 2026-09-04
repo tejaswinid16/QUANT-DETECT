@@ -74,3 +74,6 @@ def predict(patient: PatientData):
     result = hybrid_predict(features)
 
     return result
+@app.get("/evaluation")
+def evaluation():
+    return evaluate_models()
