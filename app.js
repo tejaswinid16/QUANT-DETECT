@@ -1,4 +1,14 @@
 const { useState, useEffect, useRef } = React;
+const {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
+    ResponsiveContainer
+} = window.Recharts || {};
 
 // --- API Service ---
 const API_BASE = 'https://quant-detect-1.onrender.com';
@@ -15,6 +25,16 @@ const api = {
             return await response.json();
         } catch (error) {
             console.error("Prediction Error:", error);
+            return null;
+        }
+    },
+    getEvaluation: async () => {
+        try {
+            const response = await fetch(`${API_BASE}/evaluation`);
+            if (!response.ok) throw new Error('API Error');
+            return await response.json();
+        } catch (error) {
+            console.error("Evaluation Error:", error);
             return null;
         }
     }
@@ -98,21 +118,71 @@ const Header = () => (
     </header>
 );
 
-const ComparisonBar = ({ label, type }) => (
-    <div className="comparison-bar-container">
-        <div className="comparison-label">
-            <span>{label}</span>
-            <span className="not-available">Not available</span>
+const ComparisonBar = ({ label, type, value }) => {
+    const isDataAvailable = value !== undefined && value !== null;
+    const barWidth = isDataAvailable ? `${value * 100}%` : '0%';
+    
+    return (
+        <div className="comparison-bar-container">
+            <div className="comparison-label">
+                <span>{label}</span>
+                {isDataAvailable ? (
+                    <span style={{color: 'var(--navy-blue)'}}>{(value * 100).toFixed(1)}%</span>
+                ) : (
+                    <span className="not-available">Not available</span>
+                )}
+            </div>
+            <div className="comparison-track">
+                <div className={`comparison-fill fill-${type}`} style={{ width: barWidth }}></div>
+            </div>
         </div>
-        <div className="comparison-track">
-            <div className={`comparison-fill fill-${type}`} style={{ width: '0%' }}></div>
-        </div>
-    </div>
-);
+    );
+};
 
 // --- Pages ---
 
-const Dashboard = ({ latestPrediction, predictionHistory, navigate }) => {
+const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationData }) => {
+    
+    // Calculate best models
+    let bestModelName = "Not available";
+    let bestAccuracy = "Not available";
+    let improvementText = "Not available";
+    let classicalMaxF1 = 0;
+    
+    if (evaluationData && evaluationData.metrics) {
+        let maxF1 = 0;
+        
+        for (const [name, metrics] of Object.entries(evaluationData.metrics)) {
+            if (metrics["F1 Score"] > maxF1) {
+                maxF1 = metrics["F1 Score"];
+                bestModelName = name.replace("Classical ML ", "").replace("Quantum ML ", "").replace(/[()]/g, "");
+                bestAccuracy = (metrics["Accuracy"] * 100).toFixed(1) + "%";
+            }
+            if (name.includes("Classical ML") && metrics["F1 Score"] > classicalMaxF1) {
+                classicalMaxF1 = metrics["F1 Score"];
+            }
+        }
+        
+        const hybridF1 = evaluationData.metrics["Hybrid QML"] ? evaluationData.metrics["Hybrid QML"]["F1 Score"] : 0;
+        if (hybridF1 > classicalMaxF1) {
+            improvementText = `+${((hybridF1 - classicalMaxF1) * 100).toFixed(1)}% vs Classical`;
+        } else {
+            improvementText = `Comparable to baseline`;
+        }
+    }
+
+    // Format ROC data for Recharts
+    const rocChartData = [];
+    if (evaluationData && evaluationData.roc) {
+        // We will merge points based on approximate FPR for visual charting
+        // This is a simplified merge since standard ROC curves have different point lengths
+        const models = Object.keys(evaluationData.roc);
+        
+        // A simple approach is just drawing Lines with separate data properties, 
+        // but Recharts prefers a unified array.
+        // For simplicity, we just use the raw arrays and pass them to separate <Line> tags with their own data.
+    }
+
     return (
         <div className="animate-fade-in">
             {/* Project Purpose Message */}
@@ -139,16 +209,22 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate }) => {
                 </div>
                 <div className="card metric-card">
                     <div className="metric-header">Best Performing Model</div>
-                    <div className="metric-value not-available" style={{ fontSize: '1.2rem', marginTop: '10px' }}>Not available</div>
-                    <div className="metric-trend" style={{ color: 'var(--text-secondary)' }}>Awaiting evaluation</div>
+                    <div className={`metric-value ${!evaluationData ? 'not-available' : ''}`} style={{ fontSize: '1.2rem', marginTop: '10px' }}>
+                        {bestModelName}
+                    </div>
+                    <div className="metric-trend" style={{ color: 'var(--text-secondary)' }}>Based on F1 Score</div>
                 </div>
                 <div className="card metric-card">
                     <div className="metric-header">Best Accuracy</div>
-                    <div className="metric-value not-available" style={{ fontSize: '1.2rem', marginTop: '10px' }}>Not available</div>
+                    <div className={`metric-value ${!evaluationData ? 'not-available' : ''}`} style={{ fontSize: '1.2rem', marginTop: '10px' }}>
+                        {bestAccuracy}
+                    </div>
                 </div>
                 <div className="card metric-card">
                     <div className="metric-header">QML/Hybrid Improvement</div>
-                    <div className="metric-value not-available" style={{ fontSize: '1.2rem', marginTop: '10px' }}>Not available</div>
+                    <div className={`metric-value ${!evaluationData ? 'not-available' : ''}`} style={{ fontSize: '1.2rem', marginTop: '10px' }}>
+                        {evaluationData ? (improvementText.includes('+') ? <span style={{color: 'var(--status-healthy)'}}>{improvementText}</span> : <span style={{color: 'var(--text-secondary)'}}>{improvementText}</span>) : 'Not available'}
+                    </div>
                 </div>
             </div>
 
@@ -156,29 +232,79 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate }) => {
                 {/* Main Model Comparison */}
                 <div className="card">
                     <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>Model Comparison (F1 Score)</h3>
-                    <ComparisonBar label="Classical ML (Logistic Regression)" type="classical" />
-                    <ComparisonBar label="Classical ML (SVM)" type="classical" />
-                    <ComparisonBar label="Classical ML (Random Forest)" type="classical" />
-                    <ComparisonBar label="Quantum ML (VQC)" type="quantum" />
-                    <ComparisonBar label="Hybrid QML" type="hybrid" />
-                    <div className="mt-4 text-center">
-                        <span className="not-available" style={{ fontSize: '0.85rem' }}>Metrics data not provided by current API endpoint.</span>
-                    </div>
+                    <ComparisonBar 
+                        label="Classical ML (Logistic Regression)" 
+                        type="classical" 
+                        value={evaluationData?.metrics["Classical ML (Logistic Regression)"]?.["F1 Score"]} 
+                    />
+                    <ComparisonBar 
+                        label="Classical ML (SVM)" 
+                        type="classical" 
+                        value={evaluationData?.metrics["Classical ML (SVM)"]?.["F1 Score"]} 
+                    />
+                    <ComparisonBar 
+                        label="Classical ML (Random Forest)" 
+                        type="classical" 
+                        value={evaluationData?.metrics["Classical ML (Random Forest)"]?.["F1 Score"]} 
+                    />
+                    <ComparisonBar 
+                        label="Quantum ML (VQC)" 
+                        type="quantum" 
+                        value={evaluationData?.metrics["Quantum ML (VQC)"]?.["F1 Score"]} 
+                    />
+                    <ComparisonBar 
+                        label="Hybrid QML" 
+                        type="hybrid" 
+                        value={evaluationData?.metrics["Hybrid QML"]?.["F1 Score"]} 
+                    />
+                    {!evaluationData && (
+                        <div className="mt-4 text-center">
+                            <span className="not-available" style={{ fontSize: '0.85rem' }}>Fetching metrics data...</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* ROC Curve Placeholder */}
                 <div className="card">
-                    <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>ROC-AUC Comparison</h3>
-                    <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px', background: 'var(--bg-primary)' }}>
-                        <div className="text-center">
-                            <Icon name="line-chart" size={32} color="var(--text-secondary)" className="mb-2" />
-                            <div className="not-available">ROC data not available from backend</div>
-                        </div>
+                    <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>ROC Curve</h3>
+                    <div style={{ height: '240px', width: '100%' }}>
+                        {evaluationData && evaluationData.roc ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)"/>
+                                    <XAxis dataKey="fpr" type="number" domain={[0, 1]} tick={{fontSize: 12}} />
+                                    <YAxis dataKey="tpr" type="number" domain={[0, 1]} tick={{fontSize: 12}} />
+                                    <Tooltip />
+                                    
+                                    {/* Creating lines individually since data arrays vary in length */}
+                                    <Line 
+                                        data={evaluationData.roc["Classical ML (Logistic Regression)"].fpr.map((fpr, i) => ({ fpr, tpr: evaluationData.roc["Classical ML (Logistic Regression)"].tpr[i] }))} 
+                                        type="monotone" dataKey="tpr" stroke="#2A9DFF" dot={false} strokeWidth={2} name="Classical ML" 
+                                    />
+                                    <Line 
+                                        data={evaluationData.roc["Quantum ML (VQC)"].fpr.map((fpr, i) => ({ fpr, tpr: evaluationData.roc["Quantum ML (VQC)"].tpr[i] }))} 
+                                        type="monotone" dataKey="tpr" stroke="#1C55A5" dot={false} strokeWidth={2} name="Quantum ML" 
+                                    />
+                                    <Line 
+                                        data={evaluationData.roc["Hybrid QML"].fpr.map((fpr, i) => ({ fpr, tpr: evaluationData.roc["Hybrid QML"].tpr[i] }))} 
+                                        type="monotone" dataKey="tpr" stroke="#0E2340" dot={false} strokeWidth={2} name="Hybrid QML" 
+                                    />
+                                    <Line data={[{fpr:0, tpr:0}, {fpr:1, tpr:1}]} type="linear" dataKey="tpr" stroke="#cccccc" strokeDasharray="5 5" dot={false} name="Random" />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px', background: 'var(--bg-primary)' }}>
+                                <div className="text-center">
+                                    <Icon name="line-chart" size={32} color="var(--text-secondary)" className="mb-2" />
+                                    <div className="not-available">Fetching ROC data...</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <div className="flex justify-between mt-4" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: 'var(--cyan-blue)', borderRadius: '2px' }}></div>Classical ML</div>
-                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: 'var(--royal-blue)', borderRadius: '2px' }}></div>Quantum ML</div>
-                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: 'var(--navy-blue)', borderRadius: '2px' }}></div>Hybrid QML</div>
+                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: '#2A9DFF', borderRadius: '2px' }}></div>Classical ML</div>
+                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: '#1C55A5', borderRadius: '2px' }}></div>Quantum ML</div>
+                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: '#0E2340', borderRadius: '2px' }}></div>Hybrid QML</div>
                     </div>
                 </div>
             </div>
@@ -399,10 +525,53 @@ const Predict = ({ onPredictionComplete }) => {
     );
 };
 
+const EvaluationView = ({ evaluationData }) => {
+    if (!evaluationData) {
+        return (
+            <div className="card text-center" style={{ padding: '40px' }}>
+                <p>Loading evaluation metrics from backend...</p>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="animate-fade-in">
+            <h2 className="mb-4" style={{ color: 'var(--navy-blue)' }}>Comprehensive Model Evaluation</h2>
+            
+            <div className="card mb-4">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            <th>Accuracy</th>
+                            <th>Precision</th>
+                            <th>Recall</th>
+                            <th>F1 Score</th>
+                            <th>ROC-AUC</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {Object.entries(evaluationData.metrics).map(([model, metrics]) => (
+                            <tr key={model}>
+                                <td style={{ fontWeight: 600 }}>{model}</td>
+                                <td>{(metrics["Accuracy"] * 100).toFixed(1)}%</td>
+                                <td>{(metrics["Precision"] * 100).toFixed(1)}%</td>
+                                <td>{(metrics["Recall"] * 100).toFixed(1)}%</td>
+                                <td style={{ color: 'var(--royal-blue)', fontWeight: 600 }}>{(metrics["F1 Score"] * 100).toFixed(1)}%</td>
+                                <td>{metrics["ROC-AUC"].toFixed(3)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 const PlaceholderPage = ({ title }) => (
     <div className="animate-fade-in card text-center" style={{ padding: '60px 20px' }}>
         <h2 style={{ color: 'var(--navy-blue)', marginBottom: '16px' }}>{title}</h2>
-        <p className="not-available">This view is currently under development or awaiting backend endpoints.</p>
+        <p className="not-available">This view is currently under development.</p>
     </div>
 );
 
@@ -410,10 +579,29 @@ const App = () => {
     const [currentPage, setCurrentPage] = useState('dashboard');
     const [latestPrediction, setLatestPrediction] = useState(null);
     const [predictionHistory, setPredictionHistory] = useState([]);
+    const [evaluationData, setEvaluationData] = useState(null);
 
     useEffect(() => {
         if (window.lucide) window.lucide.createIcons();
     }, [currentPage]);
+    
+    // Fetch evaluation data on initial load
+    useEffect(() => {
+        const fetchEval = async () => {
+            try{
+                const data = await api.getEvaluation();
+            }
+            catch(e)
+            {
+                console.error("Error fetching evaluation data:", e);
+            }
+
+            if (data) {
+                setEvaluationData(data);
+            }
+        };
+        fetchEval();
+    }, []);
 
     const handleNewPrediction = (pred) => {
         setLatestPrediction(pred);
@@ -422,15 +610,15 @@ const App = () => {
 
     const renderPage = () => {
         switch(currentPage) {
-            case 'dashboard': return <Dashboard latestPrediction={latestPrediction} predictionHistory={predictionHistory} navigate={setCurrentPage} />;
+            case 'dashboard': return <Dashboard latestPrediction={latestPrediction} predictionHistory={predictionHistory} navigate={setCurrentPage} evaluationData={evaluationData} />;
             case 'predict': return <Predict onPredictionComplete={handleNewPrediction} />;
+            case 'evaluation': return <EvaluationView evaluationData={evaluationData} />;
             case 'dataset': return <PlaceholderPage title="Dataset Management" />;
             case 'qml-model': return <PlaceholderPage title="QML Model Training" />;
-            case 'evaluation': return <PlaceholderPage title="Model Evaluation" />;
             case 'reports': return <PlaceholderPage title="Reports" />;
             case 'settings': return <PlaceholderPage title="Settings" />;
             case 'help': return <PlaceholderPage title="Help" />;
-            default: return <Dashboard latestPrediction={latestPrediction} predictionHistory={predictionHistory} navigate={setCurrentPage} />;
+            default: return <Dashboard latestPrediction={latestPrediction} predictionHistory={predictionHistory} navigate={setCurrentPage} evaluationData={evaluationData} />;
         }
     };
 
