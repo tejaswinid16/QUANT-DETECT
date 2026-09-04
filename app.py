@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from hybrid_prediction import hybrid_predict
+from hybrid_prediction import hybrid_predict, evaluate_models
 
 
 # ==========================================
@@ -74,6 +74,9 @@ def predict(patient: PatientData):
     result = hybrid_predict(features)
 
     return result
+
+
+
 @app.get("/evaluation")
 def evaluation():
     return evaluate_models()
