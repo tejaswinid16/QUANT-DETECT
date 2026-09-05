@@ -108,7 +108,7 @@ const Header = () => (
         </div>
         <div className="user-controls">
             <div className="user-controls-text">
-                <div style={{fontWeight: 600, color: 'var(--navy-blue)'}}>Team Q-Detect</div>
+                <div style={{fontWeight: 600, color: 'var(--navy-blue)'}}>Team Qubit-Quells</div>
                 <div className="user-controls-role">Admin</div>
             </div>
             <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--royal-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
