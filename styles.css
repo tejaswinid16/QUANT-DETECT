@@ -380,6 +380,7 @@ body {
     font-style: italic;
     font-size: 0.9rem;
 }
+
 /* ==========================================
    MOBILE / PORTRAIT RESPONSIVE DESIGN
    ========================================== */
@@ -509,5 +510,9 @@ body {
 
     .metric-value {
         font-size: 1.4rem;
+    }
+   
+   .card > div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
     }
 }
