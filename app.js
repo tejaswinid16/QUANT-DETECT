@@ -1,14 +1,7 @@
 const { useState, useEffect, useRef } = React;
-const {
-    LineChart,
-    Line,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer
-} = window.Recharts || {};
+
+// Safe dynamic accessor for Recharts components
+const getRecharts = () => window.Recharts || {};
 
 // --- API Service ---
 const API_BASE = 'https://quant-detect-1.onrender.com';
@@ -40,7 +33,7 @@ const api = {
     }
 };
 
-// --- Components ---
+// --- Helper Components ---
 
 const Icon = ({ name, size = 24, color = "currentColor", className = "" }) => {
     const iconRef = useRef(null);
@@ -139,11 +132,56 @@ const ComparisonBar = ({ label, type, value }) => {
     );
 };
 
-// --- Pages ---
+// Reusable Safe ROC Curve Container Component
+const RocChartContainer = ({ rocData, height = 240 }) => {
+    const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = getRecharts();
+
+    if (!ResponsiveContainer || !LineChart) {
+        return <div className="not-available text-center" style={{ padding: '20px' }}>Loading Recharts library...</div>;
+    }
+
+    const classicalData = rocData?.["Classical ML (Logistic Regression)"]?.fpr?.map((fpr, i) => ({
+        fpr, tpr: rocData["Classical ML (Logistic Regression)"].tpr[i]
+    }));
+
+    const quantumData = rocData?.["Quantum ML (VQC)"]?.fpr?.map((fpr, i) => ({
+        fpr, tpr: rocData["Quantum ML (VQC)"].tpr[i]
+    }));
+
+    const hybridData = rocData?.["Hybrid QML"]?.fpr?.map((fpr, i) => ({
+        fpr, tpr: rocData["Hybrid QML"].tpr[i]
+    }));
+
+    return (
+        <div style={{ height: `${height}px`, width: '100%' }}>
+            <ResponsiveContainer width="100%" height="100%">
+                <LineChart margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)"/>
+                    <XAxis dataKey="fpr" type="number" domain={[0, 1]} tick={{fontSize: 12}} />
+                    <YAxis dataKey="tpr" type="number" domain={[0, 1]} tick={{fontSize: 12}} />
+                    <Tooltip />
+                    {Legend && <Legend />}
+                    
+                    {classicalData && (
+                        <Line data={classicalData} type="monotone" dataKey="tpr" stroke="#2A9DFF" dot={false} strokeWidth={2} name="Classical ML" />
+                    )}
+                    {quantumData && (
+                        <Line data={quantumData} type="monotone" dataKey="tpr" stroke="#1C55A5" dot={false} strokeWidth={2} name="Quantum ML" />
+                    )}
+                    {hybridData && (
+                        <Line data={hybridData} type="monotone" dataKey="tpr" stroke="#0E2340" dot={false} strokeWidth={2} name="Hybrid QML" />
+                    )}
+                    
+                    <Line data={[{fpr:0, tpr:0}, {fpr:1, tpr:1}]} type="linear" dataKey="tpr" stroke="#cccccc" strokeDasharray="5 5" dot={false} name="Random Baseline" />
+                </LineChart>
+            </ResponsiveContainer>
+        </div>
+    );
+};
+
+// --- Main Views ---
 
 const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationData }) => {
-    
-    // Calculate best models
     let bestModelName = "Not available";
     let bestAccuracy = "Not available";
     let improvementText = "Not available";
@@ -171,21 +209,8 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationDa
         }
     }
 
-    // Format ROC data for Recharts
-    const rocChartData = [];
-    if (evaluationData && evaluationData.roc) {
-        // We will merge points based on approximate FPR for visual charting
-        // This is a simplified merge since standard ROC curves have different point lengths
-        const models = Object.keys(evaluationData.roc);
-        
-        // A simple approach is just drawing Lines with separate data properties, 
-        // but Recharts prefers a unified array.
-        // For simplicity, we just use the raw arrays and pass them to separate <Line> tags with their own data.
-    }
-
     return (
         <div className="animate-fade-in">
-            {/* Project Purpose Message */}
             <div className="card mb-4" style={{ borderLeft: '4px solid var(--royal-blue)' }}>
                 <h3 style={{ color: 'var(--navy-blue)', marginBottom: '8px' }}>Project Objective</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
@@ -200,7 +225,6 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationDa
                 </div>
             </div>
 
-            {/* Top Stat Cards */}
             <div className="dashboard-grid">
                 <div className="card metric-card">
                     <div className="metric-header">Dataset</div>
@@ -229,33 +253,32 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationDa
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-                {/* Main Model Comparison */}
                 <div className="card">
                     <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>Model Comparison (F1 Score)</h3>
                     <ComparisonBar 
                         label="Classical ML (Logistic Regression)" 
                         type="classical" 
-                        value={evaluationData?.metrics["Classical ML (Logistic Regression)"]?.["F1 Score"]} 
+                        value={evaluationData?.metrics?.["Classical ML (Logistic Regression)"]?.["F1 Score"]} 
                     />
                     <ComparisonBar 
                         label="Classical ML (SVM)" 
                         type="classical" 
-                        value={evaluationData?.metrics["Classical ML (SVM)"]?.["F1 Score"]} 
+                        value={evaluationData?.metrics?.["Classical ML (SVM)"]?.["F1 Score"]} 
                     />
                     <ComparisonBar 
                         label="Classical ML (Random Forest)" 
                         type="classical" 
-                        value={evaluationData?.metrics["Classical ML (Random Forest)"]?.["F1 Score"]} 
+                        value={evaluationData?.metrics?.["Classical ML (Random Forest)"]?.["F1 Score"]} 
                     />
                     <ComparisonBar 
                         label="Quantum ML (VQC)" 
                         type="quantum" 
-                        value={evaluationData?.metrics["Quantum ML (VQC)"]?.["F1 Score"]} 
+                        value={evaluationData?.metrics?.["Quantum ML (VQC)"]?.["F1 Score"]} 
                     />
                     <ComparisonBar 
                         label="Hybrid QML" 
                         type="hybrid" 
-                        value={evaluationData?.metrics["Hybrid QML"]?.["F1 Score"]} 
+                        value={evaluationData?.metrics?.["Hybrid QML"]?.["F1 Score"]} 
                     />
                     {!evaluationData && (
                         <div className="mt-4 text-center">
@@ -264,53 +287,14 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationDa
                     )}
                 </div>
 
-                {/* ROC Curve Placeholder */}
+                {/* --- DASHBOARD ROC CURVE --- */}
                 <div className="card">
                     <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>ROC Curve</h3>
-                    <div style={{ height: '240px', width: '100%' }}>
-                        {evaluationData && evaluationData.roc ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)"/>
-                                    <XAxis dataKey="fpr" type="number" domain={[0, 1]} tick={{fontSize: 12}} />
-                                    <YAxis dataKey="tpr" type="number" domain={[0, 1]} tick={{fontSize: 12}} />
-                                    <Tooltip />
-                                    
-                                    {/* Creating lines individually since data arrays vary in length */}
-                                    <Line 
-                                        data={evaluationData.roc["Classical ML (Logistic Regression)"].fpr.map((fpr, i) => ({ fpr, tpr: evaluationData.roc["Classical ML (Logistic Regression)"].tpr[i] }))} 
-                                        type="monotone" dataKey="tpr" stroke="#2A9DFF" dot={false} strokeWidth={2} name="Classical ML" 
-                                    />
-                                    <Line 
-                                        data={evaluationData.roc["Quantum ML (VQC)"].fpr.map((fpr, i) => ({ fpr, tpr: evaluationData.roc["Quantum ML (VQC)"].tpr[i] }))} 
-                                        type="monotone" dataKey="tpr" stroke="#1C55A5" dot={false} strokeWidth={2} name="Quantum ML" 
-                                    />
-                                    <Line 
-                                        data={evaluationData.roc["Hybrid QML"].fpr.map((fpr, i) => ({ fpr, tpr: evaluationData.roc["Hybrid QML"].tpr[i] }))} 
-                                        type="monotone" dataKey="tpr" stroke="#0E2340" dot={false} strokeWidth={2} name="Hybrid QML" 
-                                    />
-                                    <Line data={[{fpr:0, tpr:0}, {fpr:1, tpr:1}]} type="linear" dataKey="tpr" stroke="#cccccc" strokeDasharray="5 5" dot={false} name="Random" />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed var(--border-color)', borderRadius: '8px', background: 'var(--bg-primary)' }}>
-                                <div className="text-center">
-                                    <Icon name="line-chart" size={32} color="var(--text-secondary)" className="mb-2" />
-                                    <div className="not-available">Fetching ROC data...</div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex justify-between mt-4" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: '#2A9DFF', borderRadius: '2px' }}></div>Classical ML</div>
-                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: '#1C55A5', borderRadius: '2px' }}></div>Quantum ML</div>
-                        <div className="flex align-center gap-2"><div style={{ width: '12px', height: '12px', background: '#0E2340', borderRadius: '2px' }}></div>Hybrid QML</div>
-                    </div>
+                    <RocChartContainer rocData={evaluationData?.roc} height={240} />
                 </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
-                {/* Recent Predictions */}
                 <div className="card">
                     <div className="flex justify-between align-center mb-4">
                         <h3 style={{ color: 'var(--navy-blue)' }}>Recent Predictions</h3>
@@ -348,9 +332,7 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationDa
                     </div>
                 </div>
 
-                {/* Right Column: Risk Summary & Quick Actions */}
                 <div className="flex" style={{ flexDirection: 'column', gap: '24px' }}>
-                    {/* Risk Prediction Summary */}
                     <div className="card">
                         <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>Risk Prediction Summary</h3>
                         {latestPrediction ? (
@@ -375,7 +357,6 @@ const Dashboard = ({ latestPrediction, predictionHistory, navigate, evaluationDa
                         )}
                     </div>
 
-                    {/* Quick Actions */}
                     <div className="card">
                         <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>Quick Actions</h3>
                         <div className="flex" style={{ flexDirection: 'column', gap: '12px' }}>
@@ -400,7 +381,6 @@ const Predict = ({ onPredictionComplete }) => {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
     
-    // 8 Features required by backend
     const [formData, setFormData] = useState({
         mean_radius: 14.0,
         mean_perimeter: 90.0,
@@ -530,18 +510,13 @@ const EvaluationView = ({ evaluationData }) => {
         return (
             <div className="card text-center" style={{ padding: '50px' }}>
                 <Icon name="loader" size={32} color="var(--royal-blue)" />
-                <h3 style={{ color: 'var(--navy-blue)', marginTop: '16px' }}>
-                    Loading Evaluation
-                </h3>
-                <p className="not-available">
-                    Fetching model evaluation results from the backend...
-                </p>
+                <h3 style={{ color: 'var(--navy-blue)', marginTop: '16px' }}>Loading Evaluation</h3>
+                <p className="not-available">Fetching model evaluation results from the backend...</p>
             </div>
         );
     }
 
     const metrics = evaluationData.metrics;
-
     const models = [
         "Classical ML (Logistic Regression)",
         "Classical ML (SVM)",
@@ -560,13 +535,11 @@ const EvaluationView = ({ evaluationData }) => {
 
     const getBestModel = (metric) => {
         let best = models[0];
-
         models.forEach(model => {
-            if (metrics[model][metric] > metrics[best][metric]) {
+            if (metrics[model]?.[metric] > (metrics[best]?.[metric] || 0)) {
                 best = model;
             }
         });
-
         return best;
     };
 
@@ -574,81 +547,35 @@ const EvaluationView = ({ evaluationData }) => {
     const bestPrecision = getBestModel("Precision");
     const bestRecall = getBestModel("Recall");
     const bestF1 = getBestModel("F1 Score");
-    const bestAUC = getBestModel("ROC-AUC");
 
     const MetricCard = ({ title, model, metric }) => (
         <div className="card metric-card">
             <div className="metric-header">{title}</div>
-
             <div className="metric-value">
-                {(metrics[model][metric] * 100).toFixed(1)}%
+                {(metrics[model]?.[metric] * 100 || 0).toFixed(1)}%
             </div>
-
-            <div className="metric-trend">
-                {shortNames[model]}
-            </div>
+            <div className="metric-trend">{shortNames[model]}</div>
         </div>
     );
 
     return (
         <div className="animate-fade-in">
-
-            {/* HEADER */}
             <div style={{ marginBottom: '24px' }}>
-                <h2 style={{ color: 'var(--navy-blue)', marginBottom: '6px' }}>
-                    Model Evaluation
-                </h2>
-
-                <p style={{ color: 'var(--text-secondary)' }}>
-                    Performance comparison of Classical ML, Quantum ML and Hybrid QML models.
-                </p>
+                <h2 style={{ color: 'var(--navy-blue)', marginBottom: '6px' }}>Model Evaluation</h2>
+                <p style={{ color: 'var(--text-secondary)' }}>Performance comparison of Classical ML, Quantum ML and Hybrid QML models.</p>
             </div>
 
-
-            {/* BEST METRICS */}
             <div className="dashboard-grid">
-
-                <MetricCard
-                    title="Best Accuracy"
-                    model={bestAccuracy}
-                    metric="Accuracy"
-                />
-
-                <MetricCard
-                    title="Best Precision"
-                    model={bestPrecision}
-                    metric="Precision"
-                />
-
-                <MetricCard
-                    title="Best Recall"
-                    model={bestRecall}
-                    metric="Recall"
-                />
-
-                <MetricCard
-                    title="Best F1 Score"
-                    model={bestF1}
-                    metric="F1 Score"
-                />
-
+                <MetricCard title="Best Accuracy" model={bestAccuracy} metric="Accuracy" />
+                <MetricCard title="Best Precision" model={bestPrecision} metric="Precision" />
+                <MetricCard title="Best Recall" model={bestRecall} metric="Recall" />
+                <MetricCard title="Best F1 Score" model={bestF1} metric="F1 Score" />
             </div>
 
-
-            {/* COMPLETE METRICS TABLE */}
             <div className="card mb-4">
-
-                <h3
-                    className="mb-4"
-                    style={{ color: 'var(--navy-blue)' }}
-                >
-                    Complete Model Performance
-                </h3>
-
+                <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>Complete Model Performance</h3>
                 <div style={{ overflowX: 'auto' }}>
-
                     <table className="data-table">
-
                         <thead>
                             <tr>
                                 <th>Model</th>
@@ -659,228 +586,49 @@ const EvaluationView = ({ evaluationData }) => {
                                 <th>ROC-AUC</th>
                             </tr>
                         </thead>
-
                         <tbody>
-
                             {models.map(model => (
-
                                 <tr key={model}>
-
-                                    <td style={{ fontWeight: 600 }}>
-                                        {shortNames[model]}
-                                    </td>
-
-                                    <td>
-                                        {(metrics[model]["Accuracy"] * 100).toFixed(1)}%
-                                    </td>
-
-                                    <td>
-                                        {(metrics[model]["Precision"] * 100).toFixed(1)}%
-                                    </td>
-
-                                    <td>
-                                        {(metrics[model]["Recall"] * 100).toFixed(1)}%
-                                    </td>
-
-                                    <td
-                                        style={{
-                                            color: 'var(--royal-blue)',
-                                            fontWeight: 700
-                                        }}
-                                    >
-                                        {(metrics[model]["F1 Score"] * 100).toFixed(1)}%
-                                    </td>
-
-                                    <td>
-                                        {metrics[model]["ROC-AUC"].toFixed(3)}
-                                    </td>
-
+                                    <td style={{ fontWeight: 600 }}>{shortNames[model]}</td>
+                                    <td>{(metrics[model]?.["Accuracy"] * 100 || 0).toFixed(1)}%</td>
+                                    <td>{(metrics[model]?.["Precision"] * 100 || 0).toFixed(1)}%</td>
+                                    <td>{(metrics[model]?.["Recall"] * 100 || 0).toFixed(1)}%</td>
+                                    <td style={{ color: 'var(--royal-blue)', fontWeight: 700 }}>{(metrics[model]?.["F1 Score"] * 100 || 0).toFixed(1)}%</td>
+                                    <td>{(metrics[model]?.["ROC-AUC"] || 0).toFixed(3)}</td>
                                 </tr>
-
                             ))}
-
                         </tbody>
-
                     </table>
-
                 </div>
-
             </div>
 
-
-            {/* F1 COMPARISON */}
             <div className="card mb-4">
-
-                <h3
-                    className="mb-4"
-                    style={{ color: 'var(--navy-blue)' }}
-                >
-                    F1 Score Comparison
-                </h3>
-
+                <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>F1 Score Comparison</h3>
                 {models.map(model => (
-
                     <ComparisonBar
                         key={model}
                         label={shortNames[model]}
-                        type={
-                            model === "Hybrid QML"
-                                ? "hybrid"
-                                : model === "Quantum ML (VQC)"
-                                    ? "quantum"
-                                    : "classical"
-                        }
-                        value={metrics[model]["F1 Score"]}
+                        type={model === "Hybrid QML" ? "hybrid" : model === "Quantum ML (VQC)" ? "quantum" : "classical"}
+                        value={metrics[model]?.["F1 Score"]}
                     />
-
                 ))}
-
             </div>
 
-
-            {/* ROC CURVE */}
+            {/* --- EVALUATION VIEW ROC CURVE --- */}
             <div className="card mb-4">
-
-                <h3
-                    className="mb-4"
-                    style={{ color: 'var(--navy-blue)' }}
-                >
-                    ROC Curve Comparison
-                </h3>
-
-                <div style={{ height: '380px', width: '100%' }}>
-
-                    <ResponsiveContainer width="100%" height="100%">
-
-                        <LineChart
-                            margin={{
-                                top: 10,
-                                right: 30,
-                                left: 10,
-                                bottom: 10
-                            }}
-                        >
-
-                            <CartesianGrid
-                                strokeDasharray="3 3"
-                                vertical={false}
-                                stroke="var(--border-color)"
-                            />
-
-                            <XAxis
-                                type="number"
-                                dataKey="fpr"
-                                domain={[0, 1]}
-                                label={{
-                                    value: "False Positive Rate",
-                                    position: "insideBottom",
-                                    offset: -5
-                                }}
-                            />
-
-                            <YAxis
-                                type="number"
-                                dataKey="tpr"
-                                domain={[0, 1]}
-                                label={{
-                                    value: "True Positive Rate",
-                                    angle: -90,
-                                    position: "insideLeft"
-                                }}
-                            />
-
-                            <Tooltip />
-
-                            <Legend />
-
-                            {models.map((model, index) => {
-
-                                const roc = evaluationData.roc?.[model];
-
-                                if (!roc) return null;
-
-                                const data = roc.fpr.map((fpr, i) => ({
-                                    fpr: fpr,
-                                    tpr: roc.tpr[i]
-                                }));
-
-                                return (
-                                    <Line
-                                        key={model}
-                                        data={data}
-                                        type="monotone"
-                                        dataKey="tpr"
-                                        dot={false}
-                                        strokeWidth={2}
-                                        name={shortNames[model]}
-                                    />
-                                );
-
-                            })}
-
-                        </LineChart>
-
-                    </ResponsiveContainer>
-
-                </div>
-
+                <h3 className="mb-4" style={{ color: 'var(--navy-blue)' }}>ROC Curve Comparison</h3>
+                <RocChartContainer rocData={evaluationData?.roc} height={380} />
             </div>
 
-
-            {/* BEST MODEL SUMMARY */}
-            <div
-                className="card"
-                style={{
-                    borderLeft: '4px solid var(--royal-blue)'
-                }}
-            >
-
-                <h3
-                    style={{
-                        color: 'var(--navy-blue)',
-                        marginBottom: '10px'
-                    }}
-                >
-                    Evaluation Summary
-                </h3>
-
+            <div className="card" style={{ borderLeft: '4px solid var(--royal-blue)' }}>
+                <h3 style={{ color: 'var(--navy-blue)', marginBottom: '10px' }}>Evaluation Summary</h3>
                 <p style={{ color: 'var(--text-secondary)' }}>
-
-                    Based on the evaluated test set,{" "}
-                    <strong>{shortNames[bestAccuracy]}</strong>{" "}
-                    achieved the highest accuracy, while{" "}
-                    <strong>{shortNames[bestF1]}</strong>{" "}
-                    achieved the highest F1 score.
-
-                    The Hybrid QML model is evaluated alongside
-                    the classical and quantum models to compare
-                    their performance using the same test dataset.
-
+                    Based on the evaluated test set, <strong>{shortNames[bestAccuracy]}</strong> achieved the highest accuracy, while <strong>{shortNames[bestF1]}</strong> achieved the highest F1 score.
                 </p>
-
             </div>
-
-
-            {/* DISCLAIMER */}
-            <div
-                style={{
-                    marginTop: '16px',
-                    padding: '14px 16px',
-                    borderRadius: '8px',
-                    background: 'rgba(28, 85, 165, 0.05)',
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.85rem'
-                }}
-            >
-                Evaluation results are based on the project's held-out
-                test dataset and are intended for project/research demonstration,
-                not clinical diagnosis.
-            </div>
-
         </div>
     );
 };
-    
 
 const PlaceholderPage = ({ title }) => (
     <div className="animate-fade-in card text-center" style={{ padding: '60px 20px' }}>
@@ -907,19 +655,15 @@ const App = () => {
         if (window.lucide) window.lucide.createIcons();
     }, [currentPage]);
     
-    // Fetch evaluation data on initial load
     useEffect(() => {
         const fetchEval = async () => {
-            try{
+            try {
                 const data = await api.getEvaluation();
-            }
-            catch(e)
-            {
+                if (data) {
+                    setEvaluationData(data);
+                }
+            } catch(e) {
                 console.error("Error fetching evaluation data:", e);
-            }
-
-            if (data) {
-                setEvaluationData(data);
             }
         };
         fetchEval();
@@ -927,7 +671,7 @@ const App = () => {
 
     const handleNewPrediction = (pred) => {
         setLatestPrediction(pred);
-        setPredictionHistory(prev => [pred, ...prev].slice(0, 5)); // Keep last 5
+        setPredictionHistory(prev => [pred, ...prev].slice(0, 5));
     };
 
     const renderPage = () => {
