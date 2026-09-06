@@ -76,7 +76,8 @@ def predict(patient: PatientData):
     return result
 
 
-
 @app.get("/evaluation")
 def evaluation():
+
     return evaluate_models()
+
